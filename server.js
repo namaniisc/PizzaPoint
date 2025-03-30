@@ -1,89 +1,90 @@
-require('dotenv').config()
-const express = require('express')
-const app = express()
-const ejs = require('ejs')
-const path = require('path')
-const expressLayout = require('express-ejs-layouts')
-const PORT = process.env.PORT || 3300
-const mongoose = require('mongoose')
-const session = require('express-session')
-const flash = require('express-flash')
-const MongoDbStore = require('connect-mongo')(session)
-const passport = require('passport')
-const Emitter = require('events')
+require('dotenv').config();
+const express = require('express');
+const app = express();
+const ejs = require('ejs');
+const path = require('path');
+const expressLayout = require('express-ejs-layouts');
+const mongoose = require('mongoose');
+const session = require('express-session');
+const flash = require('express-flash');
+const passport = require('passport');
+const Emitter = require('events');
+const MongoDbStore = require('connect-mongo');
 
-// Database connection
-const url = 'mongodb://localhost/pizza';
-mongoose.connect(url, { useNewUrlParser: true, useUnifiedTopology: true });
-const connection = mongoose.connection;
-connection.once('open', () => {
-    console.log('Database connected...');
-}).on('error', (err) => {
-    console.log('Connection failed...', err);
+// 🌟 Set port
+const PORT = process.env.PORT || 3300;
+
+// 🌟 Database connection (Removed deprecated options)
+mongoose.connect(process.env.CONNECTION_URL)
+    .then(() => console.log('✅ Database connected...'))
+    .catch(err => console.log('❌ Connection failed...', err));
+
+// 🌟 Session store
+const mongoStore = MongoDbStore.create({
+    mongoUrl: process.env.CONNECTION_URL,
+    collectionName: 'sessions'
 });
 
-// Session store 
-let mongoStore = new MongoDbStore({
-                mongooseConnection: connection,
-                collection: 'sessions'
-            })
+// 🌟 Event emitter
+const eventEmitter = new Emitter();
+app.set('eventEmitter', eventEmitter);
 
-// Event emitter 
-const eventEmitter = new Emitter()
-app.set('eventEmitter', eventEmitter)
-
-// Session config
+// 🌟 Session config
 app.use(session({
-    secret: process.env.COOKIE_SECRET,
+    secret: process.env.COOKIE_SECRET || 'default_secret',
     resave: false, 
     store: mongoStore,
     saveUninitialized: false, 
-    cookie: { maxAge: 1000 * 60 * 60 * 24 } // 24 hour 
-}))
+    cookie: { maxAge: 1000 * 60 * 60 * 24 } // 24 hours
+}));
 
-// Passport config 
-const passportInit = require('./app/config/passport')
-passportInit(passport)
-app.use(passport.initialize())
-app.use(passport.session())
+// 🌟 Passport config
+const passportInit = require('./app/config/passport');
+passportInit(passport);
+app.use(passport.initialize());
+app.use(passport.session());
 
-app.use(flash())
-// Assets 
-app.use(express.static('public'))
-app.use(express.urlencoded({ extended: false }))
-app.use(express.json())
+// 🌟 Flash messages
+app.use(flash());
 
-// Global middleware 
+// 🌟 Serve static files
+app.use(express.static('public'));
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
+
+// 🌟 Global middleware 
 app.use((req, res, next) => {
-    res.locals.session = req.session
-    res.locals.user = req.user
-    next()
-})
-// set Template engine
-app.use(expressLayout)
-app.set('views', path.join(__dirname, '/resources/views'))
-app.set('view engine', 'ejs')
+    res.locals.session = req.session;
+    res.locals.user = req.user;
+    next();
+});
 
-require('./routes/web')(app)
+// 🌟 Set Template engine
+app.use(expressLayout);
+app.set('views', path.join(__dirname, '/resources/views'));
+app.set('view engine', 'ejs');
 
-const server = app.listen(PORT , () => {
-            console.log(`Listening on port ${PORT}`)
-        })
+// 🌟 Routes
+require('./routes/web')(app);
 
-// Socket 
+// 🌟 Start server
+const server = app.listen(PORT, () => {
+    console.log(`🚀 Server listening on port ${PORT}`);
+});
 
-const io = require('socket.io')(server)
+// 🌟 Socket.io setup
+const io = require('socket.io')(server);
 io.on('connection', (socket) => {
-      // Join  
-      socket.on('join', (orderId) => {
-        socket.join(orderId)
-      })
-})
+    socket.on('join', (orderId) => {
+        socket.join(orderId);
+    });
+});
 
+// 🌟 Event listeners
 eventEmitter.on('orderUpdated', (data) => {
-    io.to(`order_${data.id}`).emit('orderUpdated', data)
-})
+    io.to(`order_${data.id}`).emit('orderUpdated', data);
+});
 
 eventEmitter.on('orderPlaced', (data) => {
-    io.to('adminRoom').emit('orderPlaced', data)
-})
+    io.to('adminRoom').emit('orderPlaced', data);
+});
